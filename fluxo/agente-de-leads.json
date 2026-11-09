@@ -1,0 +1,494 @@
+{
+  "name": "Agente de qualidade de leads (Pipedrive)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ccdacce3-8c00-433f-800d-36c06613cd6c",
+      "name": "Rodar manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "a0e04770-2695-4445-9f20-719ff6667c7e",
+      "name": "Todo dia às 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "deal",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "id": "7e0b1f33-39e1-4ba8-8cac-7229a7eff58e",
+      "name": "Buscar negócios no Pipedrive",
+      "type": "n8n-nodes-base.pipedrive",
+      "typeVersion": 1,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analista: recebe os negócios do Pipedrive (API), calcula os números do último dia vs. média dos 7 dias anteriores\nconst F = {\n  data: '79ef76eaf31f801f533e773a786cc9c60c57b97b',      // Data de entrada do lead\n  estrelas: 'f203d474df1cb565941e2b4f29d57f96b839aab9',  // Qualificação (estrelas)\n  obs: '7056162309bbc072b853fe505d6395a9a0f2e234',       // Observações do SDR\n  origem: '349261b3e8060a7857a56bf0cf133be588b4ef18',    // Origem do lead\n  reuniao: '25192e0b8f809493d71cb43cb66490659c80f70f',   // Reunião agendada\n};\nconst ORIGENS = { 39: 'LP Cartões', 40: 'Site institucional', 41: 'LP Eventos', 42: 'Indicação' };\nconst SIM = 43;\n\n// O nó do Pipedrive pode devolver os campos personalizados no topo do objeto (API v1) ou dentro de custom_fields (API v2)\nconst campo = (d, k) => (d.custom_fields && d.custom_fields[k] !== undefined) ? d.custom_fields[k] : d[k];\nconst opcao = v => (v && typeof v === 'object') ? Number(v.id ?? v.value) : Number(v);\n\nconst leads = $input.all().map(i => i.json).filter(d => campo(d, F.data)).map(d => ({\n  dia: String(campo(d, F.data)).slice(0, 10),\n  origem: ORIGENS[opcao(campo(d, F.origem))] || 'Sem origem',\n  estrelas: Number(campo(d, F.estrelas)),\n  perdido: d.status === 'lost',\n  motivo: d.lost_reason || '',\n  obs: campo(d, F.obs) || '',\n  reuniao: opcao(campo(d, F.reuniao)) === SIM,\n}));\nif (!leads.length) throw new Error('Nenhum negócio com \"Data de entrada do lead\" veio do Pipedrive.');\n\nconst dias = [...new Set(leads.map(l => l.dia))].sort();\nconst dataRef = dias[dias.length - 1];\nconst base = dias.slice(-8, -1);           // 7 dias anteriores ao dia analisado\nconst doDia = leads.filter(l => l.dia === dataRef);\nconst daBase = leads.filter(l => base.includes(l.dia));\n\nconst pct = (a, b) => b ? Math.round((a / b) * 1000) / 10 : 0;\nconst media = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 100) / 100 : 0;\n\nconst origens = [...new Set(leads.map(l => l.origem))].sort();\nconst resumo = origens.map(o => {\n  const d = doDia.filter(l => l.origem === o);\n  const b = daBase.filter(l => l.origem === o);\n  const motivos = {};\n  d.filter(l => l.perdido && l.motivo).forEach(l => { motivos[l.motivo] = (motivos[l.motivo] || 0) + 1; });\n  return {\n    origem: o,\n    leads_no_dia: d.length,\n    media_leads_por_dia_base: Math.round(b.length / base.length * 10) / 10,\n    media_estrelas_dia: media(d.map(l => l.estrelas)),\n    media_estrelas_base: media(b.map(l => l.estrelas)),\n    pct_perdidos_dia: pct(d.filter(l => l.perdido).length, d.length),\n    pct_perdidos_base: pct(b.filter(l => l.perdido).length, b.length),\n    reunioes_no_dia: d.filter(l => l.reuniao).length,\n    pct_reuniao_dia: pct(d.filter(l => l.reuniao).length, d.length),\n    pct_reuniao_base: pct(b.filter(l => l.reuniao).length, b.length),\n    motivos_de_perda_no_dia: motivos,\n    volume_baixo: d.length < 10,\n  };\n});\n\nconst observacoes = {};\norigens.forEach(o => {\n  observacoes[o] = doDia.filter(l => l.origem === o && l.perdido && l.obs).map(l => l.obs).slice(0, 25);\n});\n\nreturn [{ json: {\n  data_analisada: dataRef,\n  periodo_base: `${base[0]} a ${base[base.length - 1]}`,\n  total_leads_no_dia: doDia.length,\n  resumo_por_origem: resumo,\n  observacoes_dos_sdrs_em_leads_perdidos: observacoes,\n} }];\n"
+      },
+      "id": "1abaf835-a05d-41c9-b1b1-9bc5a8b75726",
+      "name": "Analista",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o Classificador de uma equipe de agentes que ajuda o time de marketing de uma empresa B2B (software de gestão de despesas) a entender a qualidade dos leads.\n\nAbaixo estão as observações escritas pelos SDRs nos leads PERDIDOS do dia {{ $('Analista').first().json.data_analisada }}, agrupadas por origem do lead:\n\n{{ JSON.stringify($('Analista').first().json.observacoes_dos_sdrs_em_leads_perdidos, null, 1) }}\n\nTarefa:\n1. Para cada origem, agrupe as observações em temas curtos (no máximo 4 temas por origem), como \"empresa pequena demais\", \"só pesquisando preço\", \"dados de contato falsos\".\n2. Conte quantas observações caem em cada tema. A soma por origem deve ser igual ao número de observações daquela origem.\n3. Escolha uma observação real como exemplo de cada tema, copiada sem alterar.\n4. Origens sem observações ficam com a lista de temas vazia.\n\nResponda APENAS com JSON válido, sem texto antes ou depois, neste formato:\n{\"origens\":[{\"origem\":\"...\",\"total_observacoes\":0,\"temas\":[{\"tema\":\"...\",\"quantidade\":0,\"exemplo\":\"...\"}]}]}"
+      },
+      "id": "ea83d5c8-2c03-421d-90c3-d4ad9f782ee7",
+      "name": "Classificador",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "83e0940e-0483-4d1b-a885-2a2f347dbe8c",
+      "name": "Gemini (Classificador)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai o JSON da resposta do modelo (às vezes vem com ```json ... ```)\nconst t = $input.first().json.text || '';\nconst i = t.indexOf('{'), j = t.lastIndexOf('}');\nlet obj;\ntry { obj = JSON.parse(t.slice(i, j + 1)); } catch (e) { obj = { erro_ao_ler: true, texto_original: t }; }\nreturn [{ json: obj }];"
+      },
+      "id": "703ed4b5-7ee0-4b05-81f8-1f76cc335f19",
+      "name": "Ler classificação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o Redator de uma equipe de agentes. Escreva a mensagem diária que o time de MARKETING recebe no Slack sobre a qualidade dos leads gerados por cada origem (landing pages, site, eventos, indicação).\n\nContexto: antes, essa informação chegava ao marketing de forma indireta, pela percepção dos SDRs repassada em reuniões. Agora ela vem de dados: a nota em estrelas (1 a 5) que o SDR dá a cada lead e o motivo registrado quando o lead é perdido.\n\nNÚMEROS DO DIA (calculados pelo Analista; o dia analisado é comparado com a média dos 7 dias anteriores):\n{{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}\nData analisada: {{ $('Analista').first().json.data_analisada }}\nPeríodo de comparação: {{ $('Analista').first().json.periodo_base }}\n\nMOTIVOS DE PERDA AGRUPADOS (feito pelo Classificador a partir do texto dos SDRs):\n{{ JSON.stringify($('Ler classificação').first().json, null, 1) }}\n\nRegras:\n- Português do Brasil, tom direto, para alguém de marketing que lê em 1 minuto.\n- Formato Slack: *negrito* com um asterisco, listas com \"•\". Nada de tabelas nem markdown com ##.\n- Comece com: *Qualidade dos leads – DD/MM* (use a data analisada).\n- Uma linha por origem, com: leads no dia, média de estrelas (e a comparação com a base), % perdidos.\n- Depois, *O que chamou atenção*: no máximo 3 pontos, usando os motivos agrupados.\n- Depois, *Sugestão para o marketing*: 1 a 2 ações concretas (ex.: revisar o público de uma campanha, ajustar o formulário de uma landing page).\n- Origens com \"volume_baixo\": true devem ser marcadas como \"volume baixo, ler com cautela\", sem tirar conclusão forte.\n- Use SOMENTE números que estão nos dados acima. Não invente nem arredonde de forma diferente.\n- Máximo de 18 linhas."
+      },
+      "id": "ca0c8aec-f314-4e09-8ff5-5d5e19a28460",
+      "name": "Redator",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        1240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "42bcf79e-ae81-4883-ae97-8be1c46976fe",
+      "name": "Gemini (Redator)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o Revisor de uma equipe de agentes. Sua função é conferir se a mensagem abaixo pode ser enviada ao time de marketing.\n\nMENSAGEM ESCRITA PELO REDATOR:\n{{ $('Redator').first().json.text }}\n\nDADOS OFICIAIS (do Analista):\n{{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}\nData analisada: {{ $('Analista').first().json.data_analisada }}\n\nMOTIVOS AGRUPADOS (do Classificador):\n{{ JSON.stringify($('Ler classificação').first().json, null, 1) }}\n\nVerifique:\n1. Todo número citado na mensagem existe nos dados oficiais (diferenças só de arredondamento para uma casa decimal são aceitas).\n2. Nenhuma origem com \"volume_baixo\": true recebeu conclusão forte sem o aviso de cautela.\n3. Nenhum motivo de perda foi citado se não aparece nos dados.\n4. A data está correta.\n\nResponda APENAS com JSON válido, sem texto antes ou depois:\n{\"aprovado\": true ou false, \"problemas\": [\"descrição curta de cada problema encontrado\"]}"
+      },
+      "id": "89104e4e-1151-4a81-a36a-b66cbd608196",
+      "name": "Revisor",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        1520,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "f3775818-3596-4077-9c31-c2bac4c567ca",
+      "name": "Gemini (Revisor)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Junta o parecer do Revisor com a mensagem do Redator\nconst t = $input.first().json.text || '';\nconst i = t.indexOf('{'), j = t.lastIndexOf('}');\nlet parecer;\ntry { parecer = JSON.parse(t.slice(i, j + 1)); } catch (e) { parecer = { aprovado: false, problemas: ['O Revisor não devolveu um JSON válido.'] }; }\nreturn [{ json: {\n  aprovado: parecer.aprovado === true,\n  problemas: parecer.problemas || [],\n  mensagem: $('Redator').first().json.text,\n} }];"
+      },
+      "id": "7939ca82-29d9-4eda-a0cf-88d041094df0",
+      "name": "Decidir",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "997bd5ee-cf97-41fa-b163-f9e78982e7f2",
+              "leftValue": "={{ $json.aprovado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "58f1d044-5ed9-4471-90ad-95bfe3b8844c",
+      "name": "Aprovado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2040,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o Redator. O Revisor reprovou a sua mensagem. Reescreva a mensagem corrigindo TODOS os problemas apontados e mantendo as mesmas regras de formato.\n\nMENSAGEM ORIGINAL:\n{{ $json.mensagem }}\n\nPROBLEMAS APONTADOS PELO REVISOR:\n{{ $json.problemas.join('\\n') }}\n\nDADOS OFICIAIS (use somente estes números):\n{{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}\nData analisada: {{ $('Analista').first().json.data_analisada }}\n\nDevolva apenas a mensagem final, pronta para o Slack, sem comentários."
+      },
+      "id": "ea16ac07-5303-442e-85e3-43084057914a",
+      "name": "Redator (correção)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        2300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "e9e58327-7715-4c9d-bc26-39c500c2d362",
+      "name": "Gemini (Correção)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2300,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { mensagem: $input.first().json.text } }];"
+      },
+      "id": "744e0ef6-7e75-4b7e-869c-b18df61f2bc4",
+      "name": "Mensagem corrigida",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "COLE_AQUI_A_URL_DO_WEBHOOK_DO_SLACK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.mensagem }) }}",
+        "options": {}
+      },
+      "id": "a20ea288-d95e-47c2-b908-a124dfb7991b",
+      "name": "Enviar no Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2820,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Agente de qualidade de leads\nBusca os negócios no Pipedrive pela API, calcula os números por origem, agrupa os motivos de perda escritos pelos SDRs, escreve a mensagem para o marketing e confere os números antes de enviar.\n\n**Dados fictícios.**",
+        "height": 200,
+        "width": 520
+      },
+      "id": "6abf11d0-37a3-47c7-82f5-39e2a6379853",
+      "name": "Nota ## Agente de qualida",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "content": "**Revisor**: confere cada número da mensagem com os dados do Analista. Se reprovar, a mensagem volta para correção antes de ir ao Slack.",
+        "height": 120,
+        "width": 360,
+        "color": 4
+      },
+      "id": "b9a208f2-165b-4b5a-b41f-d19cf15a983c",
+      "name": "Nota **Revisor**: confere",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        -160
+      ]
+    }
+  ],
+  "connections": {
+    "Rodar manualmente": {
+      "main": [
+        [
+          {
+            "node": "Buscar negócios no Pipedrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todo dia às 8h": {
+      "main": [
+        [
+          {
+            "node": "Buscar negócios no Pipedrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analista": {
+      "main": [
+        [
+          {
+            "node": "Classificador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificador": {
+      "main": [
+        [
+          {
+            "node": "Ler classificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler classificação": {
+      "main": [
+        [
+          {
+            "node": "Redator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redator": {
+      "main": [
+        [
+          {
+            "node": "Revisor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisor": {
+      "main": [
+        [
+          {
+            "node": "Decidir",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir": {
+      "main": [
+        [
+          {
+            "node": "Aprovado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aprovado?": {
+      "main": [
+        [
+          {
+            "node": "Enviar no Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redator (correção)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redator (correção)": {
+      "main": [
+        [
+          {
+            "node": "Mensagem corrigida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem corrigida": {
+      "main": [
+        [
+          {
+            "node": "Enviar no Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Classificador)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classificador",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Redator)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Revisor)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Revisor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Correção)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redator (correção)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar negócios no Pipedrive": {
+      "main": [
+        [
+          {
+            "node": "Analista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
