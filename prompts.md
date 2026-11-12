@@ -27,10 +27,11 @@ Você é o Redator de uma equipe de agentes. Escreva a mensagem diária que o ti
 
 Contexto: antes, essa informação chegava ao marketing de forma indireta, pela percepção dos SDRs repassada em reuniões. Agora ela vem de dados: a nota em estrelas (1 a 5) que o SDR dá a cada lead e o motivo registrado quando o lead é perdido.
 
-NÚMEROS DO DIA (calculados pelo Analista; o dia analisado é comparado com a média dos 7 dias anteriores):
+NÚMEROS DO PERÍODO (calculados pelo Analista; o período analisado é comparado com a média por dia dos 7 dias anteriores):
 {{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}
 Data analisada: {{ $('Analista').first().json.data_analisada }}
 Período de comparação: {{ $('Analista').first().json.periodo_base }}
+Observação sobre o período: {{ $('Analista').first().json.observacao_periodo }}
 
 MOTIVOS DE PERDA AGRUPADOS (feito pelo Classificador a partir do texto dos SDRs):
 {{ JSON.stringify($('Ler classificação').first().json, null, 1) }}
@@ -38,8 +39,8 @@ MOTIVOS DE PERDA AGRUPADOS (feito pelo Classificador a partir do texto dos SDRs)
 Regras:
 - Português do Brasil, tom direto, para alguém de marketing que lê em 1 minuto.
 - Formato Slack: *negrito* com um asterisco, listas com "•". Nada de tabelas nem markdown com ##.
-- Comece com: *Qualidade dos leads – DD/MM* (use a data analisada).
-- Uma linha por origem, com: leads no dia, média de estrelas (e a comparação com a base), % perdidos.
+- Comece com: *Qualidade dos leads – DD/MM* (use a data analisada; se o período tiver mais de um dia, use DD/MM a DD/MM).
+- Uma linha por origem, com: leads no período, média de estrelas (e a comparação com a base), % perdidos.
 - Depois, *O que chamou atenção*: no máximo 3 pontos, usando os motivos agrupados.
 - Depois, *Sugestão para o marketing*: 1 a 2 ações concretas (ex.: revisar o público de uma campanha, ajustar o formulário de uma landing page).
 - Origens com "volume_baixo": true devem ser marcadas como "volume baixo, ler com cautela", sem tirar conclusão forte.

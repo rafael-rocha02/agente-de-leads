@@ -9,11 +9,11 @@ Construí este agente durante meu estágio em pré-vendas na VExpenses, para res
 ## Como funciona
 
 1. **Busca os negócios no Pipedrive**, pela API, com origem, estrelas, status e observações do SDR.
-2. **O Analista calcula os números** em código, sem IA: leads, média de estrelas e % de perdidos por origem, comparados com os 7 dias anteriores.
+2. **O Analista calcula os números** em código, sem IA: leads, média de estrelas e % de perdidos por origem no dia anterior (na segunda, de sexta a domingo), comparados com os 7 dias anteriores do calendário.
 3. **O Classificador** (Gemini) agrupa o texto livre dos SDRs em motivos de perda, como "só pesquisando" ou "empresa pequena demais".
 4. **O Redator** (Gemini) escreve a mensagem para o marketing, com aviso quando o volume é baixo demais para concluir.
 5. **O Revisor** (Claude Haiku 4.5) compara cada número da mensagem com os dados do Analista. Por ser de outro fornecedor, tende a não repetir os erros do Gemini. Se encontrar erro, a mensagem volta para correção.
-6. **A mensagem vai para o Slack**, no canal do marketing, todo dia às 8h.
+6. **A mensagem vai para o Slack**, no canal do marketing, de segunda a sexta às 8h (horário de Brasília).
 
 O fluxo orquestra agentes de dois fornecedores de IA: o Gemini classifica e escreve, e o Claude revisa. As contas ficam com o código, não com a IA. O Classificador e o Revisor respondem em JSON, para o fluxo ler a saída sem interpretar texto.
 
@@ -43,7 +43,8 @@ Usar um modelo de outro fornecedor no Revisor é proposital: quem escreve e quem
 1. No n8n, importe `fluxo/agente-de-leads.json`.
 2. Configure as credenciais do Pipedrive, do Google Gemini e da Anthropic (Claude) nos nós correspondentes.
 3. No nó "Enviar no Slack", troque `COLE_AQUI_A_URL_DO_WEBHOOK_DO_SLACK` pela URL de um Incoming Webhook do seu Slack.
-4. Os campos personalizados do Pipedrive (data de entrada, estrelas, origem e reunião agendada) são lidos pelas chaves definidas no início do nó "Analista". Ajuste para as chaves da sua conta.
+4. No início do nó "Analista", `DATA_EXECUCAO` está preenchida com `2026-11-03` para a demonstração com os dados fictícios, que terminam em 02/11/2026. Deixe vazia (`''`) para o agente usar a data de hoje.
+5. Os campos personalizados do Pipedrive (data de entrada, estrelas, origem e reunião agendada) são lidos pelas chaves definidas no início do nó "Analista". Ajuste para as chaves da sua conta.
 
 ## Ferramentas
 
