@@ -2,7 +2,7 @@
 
 Agente de IA construído no n8n que lê o CRM, cruza a origem de cada lead com a nota dada pelo SDR e com o motivo de descarte, e envia ao time de marketing um resumo diário no Slack.
 
-Nasceu de um problema que vivi como SDR na VExpenses: a percepção sobre a qualidade dos leads de cada landing page chegava ao marketing de forma indireta, passando por várias pessoas. Os dados usados aqui são fictícios.
+Construí este agente durante meu estágio em pré-vendas na VExpenses, para resolver um problema que eu vivia como SDR: a percepção sobre a qualidade dos leads de cada landing page chegava ao marketing de forma indireta, passando por várias pessoas. Esta é uma recriação publicada com dados fictícios.
 
 ![Fluxo no n8n](imagens/fluxo-n8n.jpg)
 
