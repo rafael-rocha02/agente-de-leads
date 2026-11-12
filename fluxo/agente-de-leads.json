@@ -17,13 +17,14 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 8
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
             }
           ]
         }
       },
       "id": "a0e04770-2695-4445-9f20-719ff6667c7e",
-      "name": "Todo dia às 8h",
+      "name": "Dias úteis às 8h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -49,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Analista: recebe os negócios do Pipedrive (API), calcula os números do último dia vs. média dos 7 dias anteriores\nconst F = {\n  data: '79ef76eaf31f801f533e773a786cc9c60c57b97b',      // Data de entrada do lead\n  estrelas: 'f203d474df1cb565941e2b4f29d57f96b839aab9',  // Qualificação (estrelas)\n  obs: '7056162309bbc072b853fe505d6395a9a0f2e234',       // Observações do SDR\n  origem: '349261b3e8060a7857a56bf0cf133be588b4ef18',    // Origem do lead\n  reuniao: '25192e0b8f809493d71cb43cb66490659c80f70f',   // Reunião agendada\n};\nconst ORIGENS = { 39: 'LP Cartões', 40: 'Site institucional', 41: 'LP Eventos', 42: 'Indicação' };\nconst SIM = 43;\n\n// O nó do Pipedrive pode devolver os campos personalizados no topo do objeto (API v1) ou dentro de custom_fields (API v2)\nconst campo = (d, k) => (d.custom_fields && d.custom_fields[k] !== undefined) ? d.custom_fields[k] : d[k];\nconst opcao = v => (v && typeof v === 'object') ? Number(v.id ?? v.value) : Number(v);\n\nconst leads = $input.all().map(i => i.json).filter(d => campo(d, F.data)).map(d => ({\n  dia: String(campo(d, F.data)).slice(0, 10),\n  origem: ORIGENS[opcao(campo(d, F.origem))] || 'Sem origem',\n  estrelas: Number(campo(d, F.estrelas)),\n  perdido: d.status === 'lost',\n  motivo: d.lost_reason || '',\n  obs: campo(d, F.obs) || '',\n  reuniao: opcao(campo(d, F.reuniao)) === SIM,\n}));\nif (!leads.length) throw new Error('Nenhum negócio com \"Data de entrada do lead\" veio do Pipedrive.');\n\nconst dias = [...new Set(leads.map(l => l.dia))].sort();\nconst dataRef = dias[dias.length - 1];\nconst base = dias.slice(-8, -1);           // 7 dias anteriores ao dia analisado\nconst doDia = leads.filter(l => l.dia === dataRef);\nconst daBase = leads.filter(l => base.includes(l.dia));\n\nconst pct = (a, b) => b ? Math.round((a / b) * 1000) / 10 : 0;\nconst media = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 100) / 100 : 0;\n\nconst origens = [...new Set(leads.map(l => l.origem))].sort();\nconst resumo = origens.map(o => {\n  const d = doDia.filter(l => l.origem === o);\n  const b = daBase.filter(l => l.origem === o);\n  const motivos = {};\n  d.filter(l => l.perdido && l.motivo).forEach(l => { motivos[l.motivo] = (motivos[l.motivo] || 0) + 1; });\n  return {\n    origem: o,\n    leads_no_dia: d.length,\n    media_leads_por_dia_base: Math.round(b.length / base.length * 10) / 10,\n    media_estrelas_dia: media(d.map(l => l.estrelas)),\n    media_estrelas_base: media(b.map(l => l.estrelas)),\n    pct_perdidos_dia: pct(d.filter(l => l.perdido).length, d.length),\n    pct_perdidos_base: pct(b.filter(l => l.perdido).length, b.length),\n    reunioes_no_dia: d.filter(l => l.reuniao).length,\n    pct_reuniao_dia: pct(d.filter(l => l.reuniao).length, d.length),\n    pct_reuniao_base: pct(b.filter(l => l.reuniao).length, b.length),\n    motivos_de_perda_no_dia: motivos,\n    volume_baixo: d.length < 10,\n  };\n});\n\nconst observacoes = {};\norigens.forEach(o => {\n  observacoes[o] = doDia.filter(l => l.origem === o && l.perdido && l.obs).map(l => l.obs).slice(0, 25);\n});\n\nreturn [{ json: {\n  data_analisada: dataRef,\n  periodo_base: `${base[0]} a ${base[base.length - 1]}`,\n  total_leads_no_dia: doDia.length,\n  resumo_por_origem: resumo,\n  observacoes_dos_sdrs_em_leads_perdidos: observacoes,\n} }];\n"
+        "jsCode": "// Analista: recebe os negócios do Pipedrive (API) e calcula os números do dia anterior (na segunda, de sexta a domingo) vs. a média dos 7 dias anteriores\nconst F = {\n  data: '79ef76eaf31f801f533e773a786cc9c60c57b97b',      // Data de entrada do lead\n  estrelas: 'f203d474df1cb565941e2b4f29d57f96b839aab9',  // Qualificação (estrelas)\n  obs: '7056162309bbc072b853fe505d6395a9a0f2e234',       // Observações do SDR\n  origem: '349261b3e8060a7857a56bf0cf133be588b4ef18',    // Origem do lead\n  reuniao: '25192e0b8f809493d71cb43cb66490659c80f70f',   // Reunião agendada\n};\nconst ORIGENS = { 39: 'LP Cartões', 40: 'Site institucional', 41: 'LP Eventos', 42: 'Indicação' };\nconst SIM = 43;\n\n// O nó do Pipedrive pode devolver os campos personalizados no topo do objeto (API v1) ou dentro de custom_fields (API v2)\nconst campo = (d, k) => (d.custom_fields && d.custom_fields[k] !== undefined) ? d.custom_fields[k] : d[k];\nconst opcao = v => (v && typeof v === 'object') ? Number(v.id ?? v.value) : Number(v);\n\nconst leads = $input.all().map(i => i.json).filter(d => campo(d, F.data)).map(d => ({\n  dia: String(campo(d, F.data)).slice(0, 10),\n  origem: ORIGENS[opcao(campo(d, F.origem))] || 'Sem origem',\n  estrelas: Number(campo(d, F.estrelas)),\n  perdido: d.status === 'lost',\n  motivo: d.lost_reason || '',\n  obs: campo(d, F.obs) || '',\n  reuniao: opcao(campo(d, F.reuniao)) === SIM,\n}));\nif (!leads.length) throw new Error('Nenhum negócio com \"Data de entrada do lead\" veio do Pipedrive.');\n\n// Período analisado: o dia anterior à execução. Na segunda, sexta, sábado e domingo (o agente roda de segunda a sexta).\n// Modo de demonstração: com os dados fictícios, que terminam em 02/11/2026, preencha DATA_EXECUCAO. Deixe '' para usar a data de hoje.\nconst DATA_EXECUCAO = '2026-11-03';\nconst DIA = 86400000;\nconst iso = t => new Date(t).toISOString().slice(0, 10);\nconst agoraBR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));\nconst hoje = DATA_EXECUCAO ? Date.parse(DATA_EXECUCAO + 'T00:00:00Z') : Date.UTC(agoraBR.getFullYear(), agoraBR.getMonth(), agoraBR.getDate());\nconst ehSegunda = new Date(hoje).getUTCDay() === 1;\nconst periodo = (ehSegunda ? [3, 2, 1] : [1]).map(n => iso(hoje - n * DIA));   // dias analisados\nconst inicio = Date.parse(periodo[0] + 'T00:00:00Z');\nconst base = [7, 6, 5, 4, 3, 2, 1].map(n => iso(inicio - n * DIA));          // 7 dias do calendário antes do período\nconst doDia = leads.filter(l => periodo.includes(l.dia));\nconst daBase = leads.filter(l => base.includes(l.dia));\nif (!doDia.length) throw new Error(`Nenhum lead entre ${periodo[0]} e ${periodo[periodo.length - 1]}. Nada a analisar.`);\nconst dataRef = periodo.length === 1 ? periodo[0] : `${periodo[0]} a ${periodo[periodo.length - 1]}`;\nconst observacaoPeriodo = periodo.length === 1\n  ? 'Período de um dia.'\n  : `Período de ${periodo.length} dias (sexta a domingo). Os números de leads são o total do período; fim de semana costuma ter menos leads, então não trate a queda de volume do sábado e do domingo como problema.`;\n\nconst pct = (a, b) => b ? Math.round((a / b) * 1000) / 10 : 0;\nconst media = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length * 100) / 100 : 0;\n\nconst origens = [...new Set(leads.map(l => l.origem))].sort();\nconst resumo = origens.map(o => {\n  const d = doDia.filter(l => l.origem === o);\n  const b = daBase.filter(l => l.origem === o);\n  const motivos = {};\n  d.filter(l => l.perdido && l.motivo).forEach(l => { motivos[l.motivo] = (motivos[l.motivo] || 0) + 1; });\n  return {\n    origem: o,\n    leads_no_periodo: d.length,\n    media_leads_por_dia_periodo: Math.round(d.length / periodo.length * 10) / 10,\n    media_leads_por_dia_base: Math.round(b.length / base.length * 10) / 10,\n    media_estrelas_dia: media(d.map(l => l.estrelas)),\n    media_estrelas_base: media(b.map(l => l.estrelas)),\n    pct_perdidos_dia: pct(d.filter(l => l.perdido).length, d.length),\n    pct_perdidos_base: pct(b.filter(l => l.perdido).length, b.length),\n    reunioes_no_dia: d.filter(l => l.reuniao).length,\n    pct_reuniao_dia: pct(d.filter(l => l.reuniao).length, d.length),\n    pct_reuniao_base: pct(b.filter(l => l.reuniao).length, b.length),\n    motivos_de_perda_no_dia: motivos,\n    volume_baixo: d.length < 10,\n  };\n});\n\nconst observacoes = {};\norigens.forEach(o => {\n  observacoes[o] = doDia.filter(l => l.origem === o && l.perdido && l.obs).map(l => l.obs).slice(0, 25);\n});\n\nreturn [{ json: {\n  data_analisada: dataRef,\n  dias_no_periodo: periodo.length,\n  observacao_periodo: observacaoPeriodo,\n  periodo_base: `${base[0]} a ${base[base.length - 1]}`,\n  total_leads_no_periodo: doDia.length,\n  resumo_por_origem: resumo,\n  observacoes_dos_sdrs_em_leads_perdidos: observacoes,\n} }];\n"
       },
       "id": "1abaf835-a05d-41c9-b1b1-9bc5a8b75726",
       "name": "Analista",
@@ -106,7 +107,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Você é o Redator de uma equipe de agentes. Escreva a mensagem diária que o time de MARKETING recebe no Slack sobre a qualidade dos leads gerados por cada origem (landing pages, site, eventos, indicação).\n\nContexto: antes, essa informação chegava ao marketing de forma indireta, pela percepção dos SDRs repassada em reuniões. Agora ela vem de dados: a nota em estrelas (1 a 5) que o SDR dá a cada lead e o motivo registrado quando o lead é perdido.\n\nNÚMEROS DO DIA (calculados pelo Analista; o dia analisado é comparado com a média dos 7 dias anteriores):\n{{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}\nData analisada: {{ $('Analista').first().json.data_analisada }}\nPeríodo de comparação: {{ $('Analista').first().json.periodo_base }}\n\nMOTIVOS DE PERDA AGRUPADOS (feito pelo Classificador a partir do texto dos SDRs):\n{{ JSON.stringify($('Ler classificação').first().json, null, 1) }}\n\nRegras:\n- Português do Brasil, tom direto, para alguém de marketing que lê em 1 minuto.\n- Formato Slack: *negrito* com um asterisco, listas com \"•\". Nada de tabelas nem markdown com ##.\n- Comece com: *Qualidade dos leads – DD/MM* (use a data analisada).\n- Uma linha por origem, com: leads no dia, média de estrelas (e a comparação com a base), % perdidos.\n- Depois, *O que chamou atenção*: no máximo 3 pontos, usando os motivos agrupados.\n- Depois, *Sugestão para o marketing*: 1 a 2 ações concretas (ex.: revisar o público de uma campanha, ajustar o formulário de uma landing page).\n- Origens com \"volume_baixo\": true devem ser marcadas como \"volume baixo, ler com cautela\", sem tirar conclusão forte.\n- Use SOMENTE números que estão nos dados acima. Não invente nem arredonde de forma diferente.\n- Máximo de 18 linhas."
+        "text": "=Você é o Redator de uma equipe de agentes. Escreva a mensagem diária que o time de MARKETING recebe no Slack sobre a qualidade dos leads gerados por cada origem (landing pages, site, eventos, indicação).\n\nContexto: antes, essa informação chegava ao marketing de forma indireta, pela percepção dos SDRs repassada em reuniões. Agora ela vem de dados: a nota em estrelas (1 a 5) que o SDR dá a cada lead e o motivo registrado quando o lead é perdido.\n\nNÚMEROS DO PERÍODO (calculados pelo Analista; o período analisado é comparado com a média por dia dos 7 dias anteriores):\n{{ JSON.stringify($('Analista').first().json.resumo_por_origem, null, 1) }}\nData analisada: {{ $('Analista').first().json.data_analisada }}\nPeríodo de comparação: {{ $('Analista').first().json.periodo_base }}\nObservação sobre o período: {{ $('Analista').first().json.observacao_periodo }}\n\nMOTIVOS DE PERDA AGRUPADOS (feito pelo Classificador a partir do texto dos SDRs):\n{{ JSON.stringify($('Ler classificação').first().json, null, 1) }}\n\nRegras:\n- Português do Brasil, tom direto, para alguém de marketing que lê em 1 minuto.\n- Formato Slack: *negrito* com um asterisco, listas com \"•\". Nada de tabelas nem markdown com ##.\n- Comece com: *Qualidade dos leads – DD/MM* (use a data analisada; se o período tiver mais de um dia, use DD/MM a DD/MM).\n- Uma linha por origem, com: leads no período, média de estrelas (e a comparação com a base), % perdidos.\n- Depois, *O que chamou atenção*: no máximo 3 pontos, usando os motivos agrupados.\n- Depois, *Sugestão para o marketing*: 1 a 2 ações concretas (ex.: revisar o público de uma campanha, ajustar o formulário de uma landing page).\n- Origens com \"volume_baixo\": true devem ser marcadas como \"volume baixo, ler com cautela\", sem tirar conclusão forte.\n- Use SOMENTE números que estão nos dados acima. Não invente nem arredonde de forma diferente.\n- Máximo de 18 linhas."
       },
       "id": "ca0c8aec-f314-4e09-8ff5-5d5e19a28460",
       "name": "Redator",
@@ -319,17 +320,6 @@
         ]
       ]
     },
-    "Todo dia às 8h": {
-      "main": [
-        [
-          {
-            "node": "Buscar negócios no Pipedrive",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Analista": {
       "main": [
         [
@@ -490,10 +480,22 @@
           }
         ]
       ]
+    },
+    "Dias úteis às 8h": {
+      "main": [
+        [
+          {
+            "node": "Buscar negócios no Pipedrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
   },
   "pinData": {}
 }
